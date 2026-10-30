@@ -50,10 +50,38 @@ class WebServerTests(unittest.TestCase):
             html = response.read().decode("utf-8")
         self.assertIn("Đưa tay lên.", html)
         self.assertIn("/web.js", html)
+        self.assertIn('./manifest.webmanifest', html)
+        self.assertIn('apple-mobile-web-app-capable', html)
+        web_script = (app.APP_DIR / "web.js").read_text(encoding="utf-8")
+        self.assertIn("detectForVideo(video", web_script)
+        self.assertIn('MEDIAPIPE_VERSION = "0.10.14"', web_script)
+        self.assertNotIn('fetch("/api/predict"', web_script)
         self.assertNotIn("challenge-hud", html)
         self.assertNotIn("Bắt đầu thử thách", html)
         self.assertNotIn("stats-title", html)
         self.assertIn('id="camera-finger-count"', html)
+
+    def test_pwa_manifest_service_worker_and_icons_are_served(self):
+        with urllib.request.urlopen(f"{self.base_url}/manifest.webmanifest", timeout=5) as response:
+            self.assertEqual(response.status, 200)
+            self.assertIn("manifest", response.headers.get_content_type())
+            manifest = json.loads(response.read())
+        self.assertEqual(manifest["short_name"], "Ngón Số")
+        self.assertEqual(manifest["display"], "standalone")
+
+        with urllib.request.urlopen(f"{self.base_url}/sw.js", timeout=5) as response:
+            self.assertEqual(response.status, 200)
+            service_worker = response.read().decode("utf-8")
+        self.assertIn("APP_BASE.pathname", service_worker)
+        self.assertIn("ASSET_CACHE_NAME", service_worker)
+        self.assertIn("HAND_MODEL_PATH", service_worker)
+
+        for path in ("/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png"):
+            with self.subTest(path=path):
+                with urllib.request.urlopen(f"{self.base_url}{path}", timeout=5) as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(response.headers.get_content_type(), "image/png")
+                    self.assertTrue(response.read().startswith(b"\x89PNG\r\n\x1a\n"))
 
     def test_prediction_endpoint_accepts_a_camera_jpeg(self):
         frame = np.zeros((240, 320, 3), dtype=np.uint8)

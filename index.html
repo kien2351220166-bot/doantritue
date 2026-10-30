@@ -5,9 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#10251f">
   <meta name="description" content="Nhận diện số 0–10 bằng một hoặc hai bàn tay với webcam của bạn.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Ngón Số">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Ngón Số — Nhận diện số ngón tay</title>
-  <link rel="stylesheet" href="/styles.css">
-  <script src="/web.js" defer></script>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./web.js" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -17,7 +22,7 @@
         <span>ngón số<small>NHẬN DIỆN SỐ NGÓN TAY</small></span>
       </a>
       <div class="topbar-right">
-        <span class="privacy-pill"><span class="privacy-dot"></span> Camera xử lý trên máy</span>
+        <span class="privacy-pill"><span class="privacy-dot"></span> Nhận diện trên iPhone</span>
       </div>
     </header>
 
@@ -111,7 +116,7 @@
     <footer class="footer">
       <a class="brand footer-brand" href="/" aria-label="Ngón Số"><span class="brand-mark">n<span>.</span></span><span>ngón số<small>NHẬN DIỆN NGÓN TAY</small></span></a>
       <p>Nhận diện số ngón tay qua webcam <span>✳</span></p>
-      <span class="footer-privacy">Hình ảnh được xử lý trên máy tính của bạn.</span>
+      <span class="footer-privacy">Ảnh camera được xử lý trực tiếp trên thiết bị.</span>
     </footer>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

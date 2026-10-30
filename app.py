@@ -28,6 +28,11 @@ STATIC_FILES = {
     "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/styles.css": ("styles.css", "text/css; charset=utf-8"),
     "/web.js": ("web.js", "text/javascript; charset=utf-8"),
+    "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json; charset=utf-8"),
+    "/sw.js": ("sw.js", "text/javascript; charset=utf-8"),
+    "/icons/icon-192.png": ("icons/icon-192.png", "image/png"),
+    "/icons/icon-512.png": ("icons/icon-512.png", "image/png"),
+    "/icons/apple-touch-icon.png": ("icons/apple-touch-icon.png", "image/png"),
 }
 
 
@@ -175,7 +180,11 @@ class FingerNumberHandler(BaseHTTPRequestHandler):
 def main() -> None:
     server = FingerNumberServer((HOST, PORT))
     try:
-        print(f"Finger number app running at http://{HOST}:{PORT}")
+        print(f"Finger number app listening on {HOST}:{PORT}")
+        if HOST == "0.0.0.0":
+            print(f"On this computer, open http://127.0.0.1:{PORT}")
+        else:
+            print(f"Open http://{HOST}:{PORT} in a browser")
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nĐang dừng máy chủ.")

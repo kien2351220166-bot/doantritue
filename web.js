@@ -2,7 +2,12 @@
   "use strict";
 
   const MAX_PREDICTION_RETRY_MS = 5000;
+  const MEDIAPIPE_VERSION = "0.10.14";
+  const MEDIAPIPE_CDN = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}`;
+  const HAND_LANDMARKER_MODEL =
+    "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
   const fingerNames = ["Ngón cái", "Ngón trỏ", "Ngón giữa", "Ngón áp út", "Ngón út"];
+  const fingerJoints = [[5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16], [17, 18, 19, 20]];
   const connections = [
     [0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8],
     [5, 9], [9, 10], [10, 11], [11, 12], [9, 13], [13, 14], [14, 15], [15, 16],
@@ -29,11 +34,95 @@
   const toastElement = document.querySelector("#toast");
 
   let mediaStream = null;
+  let handLandmarker = null;
+  let visionModulePromise = null;
   let predictionBusy = false;
   let predictionFailures = 0;
   let reportedPredictionFailure = false;
   let predictionHistory = [];
   let toastTimer = null;
+
+  function loadVisionModule() {
+    if (!visionModulePromise) {
+      visionModulePromise = import(`${MEDIAPIPE_CDN}/vision_bundle.mjs`).catch((error) => {
+        visionModulePromise = null;
+        throw error;
+      });
+    }
+    return visionModulePromise;
+  }
+
+  async function getHandLandmarker() {
+    if (handLandmarker) return handLandmarker;
+    const { FilesetResolver, HandLandmarker } = await loadVisionModule();
+    const vision = await FilesetResolver.forVisionTasks(`${MEDIAPIPE_CDN}/wasm`);
+    handLandmarker = await HandLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: HAND_LANDMARKER_MODEL,
+        delegate: "CPU"
+      },
+      runningMode: "VIDEO",
+      numHands: 2
+    });
+    return handLandmarker;
+  }
+
+  function distance(first, second) {
+    return Math.hypot(
+      first[0] - second[0],
+      first[1] - second[1],
+      first[2] - second[2]
+    );
+  }
+
+  function jointAngle(first, joint, last) {
+    const firstVector = first.map((value, index) => value - joint[index]);
+    const lastVector = last.map((value, index) => value - joint[index]);
+    const lengths = Math.hypot(...firstVector) * Math.hypot(...lastVector);
+    if (lengths < 1e-6) return 0;
+    const cosine = firstVector.reduce(
+      (sum, value, index) => sum + value * lastVector[index],
+      0
+    ) / lengths;
+    return Math.acos(Math.max(-1, Math.min(1, cosine))) * 180 / Math.PI;
+  }
+
+  function fingerStatesFromLandmarks(landmarks, width, height) {
+    const points = landmarks.map((point) => [
+      point.x * width,
+      point.y * height,
+      (point.z || 0) * width
+    ]);
+    const palmSize = distance(points[9], points[0]);
+    if (palmSize < 1e-6) return [false, false, false, false, false];
+    const palmAxis = points[9].map((value, index) => (value - points[0][index]) / palmSize);
+    const extendedFingers = fingerJoints.map(([mcp, pip, dip, tip]) => {
+      const segmentLengths = distance(points[mcp], points[pip]) +
+        distance(points[pip], points[dip]) +
+        distance(points[dip], points[tip]);
+      const straightness = distance(points[tip], points[mcp]) / Math.max(segmentLengths, 1e-6);
+      const palmExtension = points[tip].reduce(
+        (sum, value, index) => sum + (value - points[mcp][index]) * palmAxis[index],
+        0
+      ) / palmSize;
+      return straightness >= 0.78 &&
+        jointAngle(points[mcp], points[pip], points[dip]) >= 135 &&
+        jointAngle(points[pip], points[dip], points[tip]) >= 125 &&
+        palmExtension >= 0.42;
+    });
+
+    const thumbStraightness = distance(points[4], points[2]) /
+      Math.max(distance(points[2], points[3]) + distance(points[3], points[4]), 1e-6);
+    const thumbTipToIndex = distance(points[4], points[5]) / palmSize;
+    const thumbJointToIndex = distance(points[3], points[5]) / palmSize;
+    const thumbOutwardExtension = (distance(points[4], points[0]) - distance(points[3], points[0])) /
+      palmSize;
+    const thumbExtended = thumbStraightness >= 0.78 &&
+      jointAngle(points[2], points[3], points[4]) >= 135 &&
+      thumbTipToIndex - thumbJointToIndex > 0.10 &&
+      thumbOutwardExtension >= 0.08;
+    return [thumbExtended, ...extendedFingers];
+  }
 
   function showToast(message, duration = 3800) {
     toastElement.textContent = message;
@@ -90,7 +179,9 @@
         return "Camera không hỗ trợ cấu hình video này. Hãy thử chọn webcam khác hoặc kiểm tra driver camera.";
       case "SecurityError":
       case "TypeError":
-        return "Trình duyệt không cho phép dùng camera ở địa chỉ này. Hãy mở app bằng http://127.0.0.1:8000 trên chính máy đang chạy app.";
+        return "Safari chỉ cho phép dùng camera trên HTTPS (hoặc localhost). Hãy mở ứng dụng bằng đường dẫn HTTPS.";
+      case "NotSupportedError":
+        return "Không tải được bộ nhận diện. Hãy kiểm tra kết nối Internet rồi thử lại.";
       case "AbortError":
         return "Camera bị ngắt khi đang khởi động. Hãy kiểm tra kết nối webcam rồi thử lại.";
       default:
@@ -101,15 +192,17 @@
   async function startCamera() {
     if (mediaStream) return;
     if (!navigator.mediaDevices?.getUserMedia) {
-      showToast("Trình duyệt chưa cho phép camera. Hãy mở trang qua http://127.0.0.1:8000.");
+      showToast("Trình duyệt chưa cho phép camera. Hãy mở ứng dụng qua HTTPS hoặc localhost.");
       return;
     }
     startCameraButton.disabled = true;
     startCameraButton.innerHTML = "<span aria-hidden=\"true\">…</span> Đang bật camera";
+    let cameraStarted = false;
     try {
       mediaStream = await requestCameraStream();
       video.srcObject = mediaStream;
       await video.play();
+      cameraStarted = true;
       for (const track of mediaStream.getVideoTracks()) {
         track.addEventListener("ended", onCameraTrackEnded, { once: true });
       }
@@ -121,12 +214,20 @@
       predictionHistory = [];
       predictionFailures = 0;
       reportedPredictionFailure = false;
-      setCameraState(true, "Đang nhận diện");
+      setCameraState(true, "Đang tải bộ nhận diện");
+      await getHandLandmarker();
+      if (!mediaStream) return;
+      setCameraState(true, "Đang nhận diện trên thiết bị");
       startPredictionLoop();
     } catch (error) {
       stopCamera();
       setCameraState(false, "Camera đang tắt");
-      showToast(cameraErrorMessage(error), 7000);
+      if (!cameraStarted) {
+        showToast(cameraErrorMessage(error), 7000);
+      } else {
+        console.error("Could not initialize on-device hand recognition:", error);
+        showToast(`Không tải được bộ nhận diện. Hãy kiểm tra kết nối Internet rồi thử lại. ${error.message || ""}`, 7000);
+      }
     } finally {
       startCameraButton.disabled = false;
       startCameraButton.innerHTML = "<span aria-hidden=\"true\">◎</span> Bật camera";
@@ -141,6 +242,10 @@
     if (mediaStream) {
       for (const track of mediaStream.getTracks()) track.stop();
       mediaStream = null;
+    }
+    if (handLandmarker) {
+      handLandmarker.close();
+      handLandmarker = null;
     }
     video.srcObject = null;
     context.clearRect(0, 0, canvas.width, canvas.height);
@@ -166,30 +271,36 @@
     if (!predictionBusy) {
       predictionBusy = true;
       try {
-        const snapshot = document.createElement("canvas");
-        snapshot.width = canvas.width;
-        snapshot.height = canvas.height;
-        const snapshotContext = snapshot.getContext("2d", { alpha: false });
-        snapshotContext.drawImage(video, 0, 0, snapshot.width, snapshot.height);
-        const response = await fetch("/api/predict", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image: snapshot.toDataURL("image/jpeg", 0.82) })
+        const detection = handLandmarker.detectForVideo(video, performance.now());
+        const hands = (detection.landmarks || []).map((landmarks) => {
+          const fingerStates = fingerStatesFromLandmarks(landmarks, canvas.width, canvas.height);
+          return {
+            digit: fingerStates.filter(Boolean).length,
+            fingers: fingerNames.map((name, index) => ({
+              name,
+              extended: fingerStates[index]
+            })),
+            landmarks: landmarks.map(({ x, y }) => ({ x, y }))
+          };
         });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || "Không phân tích được khung hình camera.");
+        const result = {
+          detected: hands.length > 0,
+          digit: hands.reduce((total, hand) => total + hand.digit, 0),
+          hands
+        };
         if (mediaStream) {
           predictionFailures = 0;
           reportedPredictionFailure = false;
-          setCameraState(true, "Đang nhận diện");
+          setCameraState(true, "Đang nhận diện trên thiết bị");
           renderPrediction(result);
         }
       } catch (error) {
         if (mediaStream) {
           predictionFailures += 1;
-          setCameraState(true, "Đang kết nối lại bộ nhận diện");
+          setCameraState(true, "Đang thử lại nhận diện");
           if (!reportedPredictionFailure) {
-            showToast(`Mất kết nối tạm thời. Camera vẫn bật; đang thử kết nối lại. ${error.message || ""}`, 5000);
+            console.error("On-device hand recognition failed:", error);
+            showToast(`Nhận diện gặp lỗi tạm thời; đang thử lại. ${error.message || ""}`, 5000);
             reportedPredictionFailure = true;
           }
         }
@@ -327,4 +438,9 @@
   document.querySelector("#start-camera").addEventListener("click", startCamera);
   stopCameraButton.addEventListener("click", stopCamera);
   window.addEventListener("pagehide", stopCamera);
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("./sw.js").catch((error) => {
+      console.error("Could not register the app service worker:", error);
+    });
+  }
 })();
