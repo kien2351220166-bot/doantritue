@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "ngon-so-v2";
+const CACHE_NAME = "ngon-so-v3";
 const ASSET_CACHE_NAME = "ngon-so-assets-v1";
 const ACTIVE_CACHES = [CACHE_NAME, ASSET_CACHE_NAME];
 const MEDIAPIPE_PACKAGE_PATH = "/npm/@mediapipe/tasks-vision@0.10.14/";
@@ -12,9 +12,9 @@ const APP_SHELL = [
   "styles.css",
   "web.js",
   "manifest.webmanifest",
-  "icons/icon-192.png",
-  "icons/icon-512.png",
-  "icons/apple-touch-icon.png"
+  "icons/icon-192.png?v=2",
+  "icons/icon-512.png?v=2",
+  "icons/apple-touch-icon.png?v=2"
 ].map((path) => new URL(path, APP_BASE).toString());
 
 self.addEventListener("install", (event) => {

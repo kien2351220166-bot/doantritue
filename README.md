@@ -40,7 +40,9 @@ Hình ảnh và việc nhận diện được xử lý trực tiếp trên thi�
 
 1. Trong repository, mở **Settings → Pages**, đặt **Source** thành **GitHub Actions**, rồi lưu. Đây là thao tác cần làm một lần vì GitHub không cho workflow tự bật Pages trong repository này.
 2. Đưa các tệp ứng dụng mới nhất lên nhánh `main`; workflow **Deploy PWA to GitHub Pages** sẽ tự xuất bản.
-3. Trong **Actions**, chờ workflow chạy thành công rồi mở URL **https://kien2351220166-bot.github.io/doantritue/** bằng Safari trên iPhone.
+3. Trong **Actions**, chờ workflow chạy thành công rồi mở URL HTTPS dạng `https://<tên-tài-khoản>.github.io/<tên-repository>/` bằng Safari trên iPhone.
 4. Chọn **Chia sẻ → Thêm vào MH chính**.
 
 Không cần Google Cloud, máy chủ chạy liên tục, thẻ thanh toán hay App Store. Lần đầu cần Internet để tải MediaPipe và mô hình; trình duyệt lưu các tệp này để có thể dùng lại. Camera được xử lý trên iPhone.
+
+Biểu tượng ứng dụng được thiết kế riêng theo hình bàn tay đếm ngón và dùng nhất quán cho PWA lẫn iPhone.
